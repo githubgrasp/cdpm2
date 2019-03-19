@@ -232,13 +232,13 @@ c This is the global tolerance. All other tolerances are made relative to this g
 c This function needs allows us to run the code without having to enter all 
 c default parameters
       call cdpm2u_giveDefaultValuesIfNotGiven()
-
+      
       cm(25) = printflag;
       
       m0 = 3. * ( fc** 2. - ft**2. ) / ( fc * ft ) * ecc / ( ecc + 1. );      
       do i=lft,llt
          tempkappaP=hsvs(i,1)
-c Write strain rate vector
+c Write strain increment vector
          eps(1) = d1(i)
          eps(2) = d2(i)
          eps(3) = d3(i)
@@ -248,7 +248,7 @@ c Write strain rate vector
 
          do l=1,6
             totStrain(l)   = eps(l) + hsvs(i,l+20)
-            strainrate(l)  = eps(l)
+            strainrate(l)  = eps(l)/dt1siz(i)
             plastStrain(l) =  hsvs(i,l+2)
             oldStrain(l)  = hsvs(i,l+20)
             convStrain(l) = oldStrain(l)
@@ -558,7 +558,7 @@ c
       write(*,2) '   WF1 (Damage: disp threshold 1).... = ',wf1
       write(*,2) '   FT1 (Damage: stress threshold 1).. = ',ft1
       write(*,2) '   EFC (strain threshold in comp).... = ',efc
-      write(*,2) '   STRPR (Strain rate flag).......... = ',strrateflag
+      write(*,2) '   STRPR (Strain rate flag).......... = ',strrateflg
       write(*,*) '     EQ.0.0: No rate effects            '
       write(*,*) '     EQ.1.0: Rate effects included      '
       write(*,*) '   ISOFLAG (isotropic damage flag).. =  ',isoflag

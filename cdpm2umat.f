@@ -560,7 +560,10 @@ c
       write(*,2) '   EFC (strain threshold in comp).... = ',efc
       write(*,2) '   STRPR (Strain rate flag).......... = ',strrateflg
       write(*,*) '     EQ.0.0: No rate effects            '
-      write(*,*) '     EQ.1.0: Rate effects included      '
+      write(*,*) '     EQ.1.0: standard                   '
+      write(*,*) '     EQ.2.0: linear GF                  '
+      write(*,*) '     EQ.3.0: constant GF                '
+      write(*,*) '     EQ.4.0: modified + constant GF     '
       write(*,*) '   ISOFLAG (isotropic damage flag).. =  ',isoflag
       write(*,*) '     EQ.0.0: standard model with two damage params'
       write(*,*) '     EQ.1.0: model with one damage param  '
@@ -1737,14 +1740,15 @@ c     Determine the two factors from the stress
       end
 
       real function cdpm2u_computeRateFactor(alpha,strainrate,fc,
-     $     fc0,tol)
+     $     fc0,tol,strrateflg)
 c     Function to incorporate impact effects in the constitutive law and calculate rateFactor. 
 c     All functions used are based on the equations of the chapter 2.1.5 of the Model Code 1990. 
+      
       real strainrate(6),princDir(3,3),princStrainRate(3),max,min,tol,
-     $     alphaS,gammaS, deltaS,betaS,strainRateTension0,fc,fc0,
+     $     alphaS,gammaS, deltaS,betaS,strainRateTension0,
      $     strainRateCompression0,rate,ratioT,ratioC,rateFactorTension,
      $     rateFactorCompression,alpha,rateFactor,
-     $     strainRateRatioCompression
+     $     strainRateRatioCompression,strrateflg
       integer k
 c     alpha                     --------------   alpha is the variable used in CDPM2U to evaluate contribution of compressive stresses to principal stress tensor  <Input>
 c     totstrain(6)             --------------   array containing strain increments {xx,yy,zz,xy,yz,xz} <Input>
@@ -1801,26 +1805,44 @@ c     that users use for fc Pa but for the default value of fc0 MPa
       endif
 
       ratioT= rate/strainRateTension0
-      if ( rate .lt. 30.e-6 ) then
-         rateFactorTension = 1.
-      else if ( 30.e-6 .lt. rate .and. rate .lt. 1.) then
-         rateFactorTension = ratioT**deltaS
-      else 
-        rateFactorTension =  betaS * (ratioT **(1./3.))
+      if (strrateflg .gt. 0 .and. strrateflg .lt. 4) then 
+         if ( rate .lt. 1.e-6 ) then
+            rateFactorTension = 1.
+         else if ( 1.e-6 .lt. rate .and. rate .lt. 1.) then
+            rateFactorTension = ratioT**deltaS
+         else 
+            rateFactorTension =  betaS * (ratioT **(1./3.))
+         endif
+      else if (strrateflg .eq. 4) then
+         if ( rate .lt. 1.e-6 ) then
+            rateFactorTension = 1.
+         else
+            rateFactorTension = ratioT**deltaS
+         endif
       endif
 
+      
       ratioC= rate/strainRateCompression0
-      if ( rate .gt. -30.e-6 ) then
-         rateFactorCompression = 1.
-      else if (-30.e-6 .gt. rate .and. rate .gt. -30) then
-         rateFactorCompression = ratioC**(1.026 * alphaS)        
-      else 
-         rateFactorCompression =  gammaS*(ratioC**(1./3.))
-      endif
-
+      if (strrateflg .gt. 0 .and. strrateflg .lt. 4) then 
+          if ( rate .gt. -30.e-6 ) then
+            rateFactorCompression = 1.
+         else if (-30.e-6 .gt. rate .and. rate .gt. -30) then
+            rateFactorCompression = ratioC**(1.026 * alphaS)        
+         else 
+            rateFactorCompression =  gammaS*(ratioC**(1./3.))
+         endif
+      else if (strrateflg .eq. 4) then
+         if ( rate .gt. -30.e-6 ) then
+            rateFactorCompression = 1.
+         else
+            rateFactorCompression = ratioC**(1.026 * alphaS)
+         end if
+      end if
+      
       rateFactor = ( 1. - alpha ) * rateFactorTension + 
      $     alpha * rateFactorCompression
       cdpm2u_computeRateFactor=rateFactor
+
       return
       end
 
@@ -1911,10 +1933,10 @@ c                                        =0  it not analysis 1st step
      $     gtol)
       
 c-------------------Compute tensile and compressive equivalent strains-------------------------------------
-      if (strrateflg .eq. 1.0 .and. omegaC .eq. 0. .and. 
+      if (strrateflg .gt. 0.0 .and. omegaC .eq. 0. .and. 
      $     omegaT.eq. 0. ) then
          tempRateFactor=cdpm2u_computeRateFactor(alpha,strainrate,
-     $        fc,fc0,gTol)
+     $        fc,fc0,gTol,strrateflg)
       else 
          tempRateFactor=rateFactor
       end if
@@ -1933,7 +1955,7 @@ c-------------------Compute tensile and compressive equivalent strains----------
 c     Note rate factor is calculated only once at the onset of damage
       if ( ( tempEquivStrainT .gt. e0 .or. tempEquivStrainC .gt. e0
      $     ) .and. ( ( omegaT .eq. 0. ) .and. (omegaC .eq. 0. ) ).and.
-     $     strrateflg .eq. 1.0 .and. step1flag .ne. 1) then
+     $     strrateflg .gt. 0.0 .and. step1flag .ne. 1) then
          tempEquivStrainT=epsilonT+(tempEquivStrain-epsilon)/rateFactor
          if (unloadingFlag .eq. 0) then
             tempEquivStrainC=epsilonC+(tempEquivStrain-epsilon)*alpha/
@@ -1988,7 +2010,7 @@ c     only tensile damage surface active
          kappaDT= tempEquivStrainT
 
          omegaT = cdpm2u_computeDamageT(kappaDT, kappaDT1, kappaDT2, 
-     $        len, omegaOldT)
+     $        len, omegaOldT,rateFactor)
       else if (  fsT .lt.  -yieldTolDamage .and. 
      $        fsC .ge.  -yieldTolDamage) then
 c     only compressive damage surface active
@@ -2006,7 +2028,7 @@ c     only compressive damage surface active
 
          omegaC = 
      $        cdpm2u_computeDamageC(kappaDC, 
-     $        kappaDC1, kappaDC2, omegaOldC)
+     $        kappaDC1, kappaDC2, omegaOldC,rateFactor)
       else if (  fsT .ge.-yieldTolDamage  .and. 
      $        fsC .ge.-yieldTolDamage ) then
 c Both compressive and tensile damage surfaces are active
@@ -2022,7 +2044,7 @@ c Both compressive and tensile damage surfaces are active
          kappaDT= tempEquivStrainT
 
          omegaT = cdpm2u_computeDamageT(kappaDT, kappaDT1, kappaDT2, 
-     $        len, omegaOldT)
+     $        len, omegaOldT,rateFactor)
 c     only compressive damage surface active
          deltaPlasticStrainNormCNew = 
      $        cdpm2u_computeDeltaPlasticStrainNormC(
@@ -2035,7 +2057,7 @@ c     only compressive damage surface active
          
          kappaDC= tempEquivStrainC
          omegaC = cdpm2u_computeDamageC(kappaDC, kappaDC1, 
-     $        kappaDC2, omegaOldC)
+     $        kappaDC2, omegaOldC,rateFactor)
       endif
     
       return
@@ -2149,7 +2171,7 @@ c     negative help values are not of interest and create problems since we comp
       end
       
       real function  cdpm2u_computeDamageT(kappa,kappaOne,kappaTwo,le, 
-     $      omegaOld)
+     $      omegaOld,rateFactor)
 c     Function to calculate damage due to tension.
       real ym,pr,ecc,qh0,ft,fc,hp,ah,bh,ch,dh,as,df,fc0,type,bs,
      1     wf,wf1,efc,ft1,strrateflg,failflg,m0,gTol,isoflag,printflag
@@ -2157,7 +2179,8 @@ c     Function to calculate damage due to tension.
      1     wf,wf1,efc,ft1,strrateflg,failflg,m0,gTol,isoflag,printflag
       
       real kappa, kappaOne, kappaTwo, omegaOld,residual,le,
-     $     residualDerivative,omega,tol,help,e0,yieldTolDamage
+     $     residualDerivative,omega,tol,help,e0,yieldTolDamage,
+     $     rateFactor,wf1Mod,wfMod
       integer iter,newtonIter
 c     kappa           ----------------------- damage history parameter kappaDT <input>
 c     kappaOne        ----------------------- damage history parameter kappaDT1 <input>
@@ -2173,6 +2196,16 @@ c     newtonIter      ----------------------- value of the max allowed N-R itera
 c     yieldTolDamage  ----------------------- tolerance used in the damage algorithm if Hp=0
 
 
+      wfMod = wf
+      wf1Mod = wf1
+      if(strrateflg .eq. 2) then
+         wfMod = wf/rateFactor
+         wf1Mod = wf1/rateFactor
+      else if((strrateflg .eq. 3) .or. (strrateflg .eq. 4)) then
+         wfMod = wf/(rateFactor*rateFactor)
+         wf1Mod = wf1/(rateFactor*rateFactor)
+      end if
+
       newtonIter=100
       tol=gTol/100.0
       e0=ft/ym
@@ -2180,24 +2213,26 @@ c     yieldTolDamage  ----------------------- tolerance used in the damage algor
       if ( kappa  .gt. e0*(1-yieldTolDamage) ) then
         if ( type .eq. 0. ) then
 c     Linear damage law
-           omega = ( ym * kappa * wf - ft * wf + ft * kappaOne * le ) /
-     $          ( ym * kappa * wf - ft * le * kappaTwo )
+           omega = ( ym * kappa * wfMod - ft * wfMod +
+     $      ft * kappaOne * le ) /
+     $          ( ym * kappa * wfMod - ft * le * kappaTwo )
         else if ( type .eq. 1. ) then
 c     Billinear damage law
-            omega = ( ym * kappa * wf1 - ft * wf1 - ( ft1 - ft ) * 
-     $          kappaOne * le ) /( ym * kappa * wf1 + 
+            omega = ( ym * kappa * wf1Mod - ft * wf1Mod - ( ft1 - ft ) * 
+     $          kappaOne * le ) /( ym * kappa * wf1Mod + 
      $          ( ft1 - ft ) * le * kappaTwo )
             help = le * kappaOne + le * omega * kappaTwo
-            if ( help .ge. 0. .and. help .lt. wf1 ) then
+            if ( help .ge. 0. .and. help .lt. wf1Mod ) then
                goto 185
             endif
 
-            omega = ( ym * kappa * ( wf - wf1 ) - ft1 * ( wf - wf1 ) +
-     $           ft1 * kappaOne * le  - ft1 * wf1 ) / ( ym * kappa * 
-     $           ( wf - wf1 )  - ft1 * le * kappaTwo )
+            omega = ( ym * kappa * ( wfMod - wf1Mod ) -
+     $       ft1 * ( wfMod - wf1Mod ) +
+     $           ft1 * kappaOne * le  - ft1 * wf1Mod ) / ( ym * kappa * 
+     $           ( wfMod - wf1Mod )  - ft1 * le * kappaTwo )
             help = le * kappaOne + le * omega * kappaTwo
 
-            if ( help .gt. wf1 .and. help .lt. wf ) then
+            if ( help .gt. wf1Mod .and. help .lt. wfMod ) then
                goto 185
             endif
          else if ( type .eq. 2. ) then
@@ -2210,10 +2245,10 @@ c     Exponential: Iterative solution with N-R procedure
  135        continue
             iter=iter+1
             residual = ( 1 - omega ) * ym * kappa - ft *
-     $           exp(-le * ( omega * kappaTwo + kappaOne ) / wf)
+     $           exp(-le * ( omega * kappaTwo + kappaOne ) / wfMod)
             residualDerivative = -ym * kappa + ft * le * 
-     $           kappaTwo / wf * exp(-le * ( omega * kappaTwo + 
-     $           kappaOne ) / wf)
+     $           kappaTwo / wfMod * exp(-le * ( omega * kappaTwo + 
+     $           kappaOne ) / wfMod)
             omega =omega- residual / residualDerivative;
             if ( iter .gt. newtonIter ) then
                write(*,*) '*** Algorithm for tensile damage-
@@ -2241,7 +2276,7 @@ c     Exponential: Iterative solution with N-R procedure
        end  
 
       real function cdpm2u_computeDamageC(kappa, kappaOne, 
-     $     kappaTwo, omegaOld)
+     $     kappaTwo, omegaOld, rateFactor)
 c     Function to calculate damage due to compression
       real ym,pr,ecc,qh0,ft,fc,hp,ah,bh,ch,dh,as,df,fc0,type,bs,
      1     wf,wf1,efc,ft1,strrateflg,failflg,m0,gTol,isoflag,printflag
@@ -2249,7 +2284,8 @@ c     Function to calculate damage due to compression
      1     wf,wf1,efc,ft1,strrateflg,failflg,m0,gTol,isoflag,printflag
       
       real kappa, kappaOne, kappaTwo, omegaOld,residual,dResidualDOmega,
-     $     exponent,omega,tol,kappaDC,e0,yieldTolDamage
+     $     exponent,omega,tol,kappaDC,e0,yieldTolDamage,rateFactor,
+     $     efcMod
       integer nite,newtonIter
 c     kappa           ----------------------- damage history parameter kappaDC <Input>
 c     kappaOne        ----------------------- damage history parameter kappaDC1 <Input>
@@ -2262,6 +2298,15 @@ c     omega           ----------------------- new damage variable calculated bas
 c     tol             ----------------------- tolerance used in N-R procedure for the calculation of omegaC
 c     nite            ----------------------- counter of performed N-R iterations
 c     newtonIter      ----------------------- value of the max allowed N-R iterations for the calculation of omegaC
+
+      efcMod = efc
+      if(strrateflg .eq. 2) then
+         efcMod = efc/rateFactor
+      else if((strrateflg .eq. 3) .or. (strrateflg .eq. 4)) then
+         efcMod = efc/(rateFactor*rateFactor)
+      end if
+
+      
       if (isoflag .eq. 1.0) then
          omega=0.0
          kappaOne=0.0
@@ -2284,9 +2329,9 @@ c     newtonIter      ----------------------- value of the max allowed N-R itera
  187     continue 
          nite=nite+1;
          residual =  ( 1. - omega ) * ym * kappa - ft * exp( - ( 
-     $        kappaOne + omega * kappaTwo ) / efc )
-         dResidualDOmega =-ym * kappa + ft * kappaTwo / efc * exp( -( 
-     $        kappaOne + omega * kappaTwo ) / efc )
+     $        kappaOne + omega * kappaTwo ) / efcMod )
+         dResidualDOmega =-ym * kappa + ft * kappaTwo / efcMod * exp( -( 
+     $        kappaOne + omega * kappaTwo ) / efcMod )
          omega = omega- residual / dResidualDOmega
          if ( nite .gt. newtonIter ) then
             write(*,*) '*** Algorithm for compressive damage-

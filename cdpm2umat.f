@@ -1804,7 +1804,7 @@ c     Determine the two factors from the stress
       real function cdpm2u_computeRateFactor(alpha,strainrate,fc,
      $     tol,sratetype)
 c     Function to incorporate impact effects in the constitutive law and calculate rateFactor. 
-c     All functions used are based on the equations of the chapter 2.1.5 of the Model Code 1990. 
+c     All functions used are based on Model Code 2010. 
       
       real strainrate(6),princDir(3,3),princStrainRate(3),max,min,tol,
      $     alphaS,gammaS, deltaS,betaS,strainRateTension0,

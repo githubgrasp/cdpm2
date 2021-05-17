@@ -11,7 +11,7 @@ $        |         |         |         |         |         |         |         |
 $    p1(E)    p2(PR)   p3(ECC)   p4(QH0)    p5(FT)    p6(FC)    p7(HP)    p8(AH)
      20.e9       0.0                         2.4e6     24.e6       .01 
 $        |         |         |         |         |         |         |         |
-$   p9(BH)   p10(CH)   p11(DH)   p12(AS)   p13(DF)  p14(FC0) p15(TYPE)   p16(BS)
+$   p9(BH)   p10(CH)   p11(DH)   p12(AS)   p13(DF)  p14(ERT) p15(TYPE)   p16(BS)
                                                                      1
 $        |         |         |         |         |         |         |         |
 $  p17(WF)  p18(WF1)  p19(FT1)p20(SFLAG)p21(FFLAG)  p22(EFC)p23(dflag)p24(pflag)

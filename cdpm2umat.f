@@ -1,6 +1,6 @@
 c*****************************************************************
 c
-c Copyright (c) 2020 Peter Grassl
+c Copyright (c) 2021 Peter Grassl
 c
 c Permission is hereby granted, free of charge, to any person obtaining a copy
 c of this software and associated documentation files (the "Software"), to deal
@@ -21,14 +21,12 @@ c OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 c SOFTWARE.
 c**********************************************************************
 c
-c
-      
+c      
       Subroutine umat50v(cm,d1,d2,d3,d4,d5,d6,sig1,sig2,
      . sig3,sig4,sig5,sig6,epsps,hsvs,lft,llt,dt1siz,capa,
      . etype,tt,temps,failels,nlqa,crv,cma,qmat,elsizv,idelev)
 c
 c
-
 c*****************************************************************
 c Implementation of the stress evaluation for CDPM2 in UMAT50V in LS-DYNA
 c Support page: http://petergrassl.com/Research/DamagePlasticity/CDPMLSDYNA/index.html
@@ -57,34 +55,34 @@ c
       real eps(6);
 c       sig(nlq,6)   --- nominal stress in voigt notation xx,yy,zz,xy,yz,xz
 c       epsps(nlq)   --- cummulative plastic strain (kappa)
-c       hisv(nlq,35) - history variables
-c       hisv(nlq,1) --- kappa
-c       hisv(nlq,2) --- equivalent strain
-c       hisv(nlq,3) --- plastic strain xx
-c       hisv(nlq,4) --- plastic strain yy
-c       hisv(nlq,5) --- plastic strain zz
-c       hisv(nlq,6) --- plastic strain xy
-c       hisv(nlq,7) --- plastic strain zy
-c       hisv(nlq,8) --- plastic strain xz
-c       hisv(nlq,9) --- kappa tension kdt
-c       hisv(nlq,10) -- kappa tension 1 kdt1
-c       hisv(nlq,11) -- kappa tension 2 kdt2
-c       hisv(nlq,12) -- kappa compression kdc
-c       hisv(nlq,13) -- kappa compression 1 kdc1
-c       hisv(nlq,14) -- kappa compression 2 kdc2
-c       hisv(nlq,15) -- damage variable tension omegaT (in LS-DYNA omegaT is written as wt)
-c       hisv(nlq,16) -- damage variable tension omegaC (in LS-DYNA omegaC is written as wc)
-c       hisv(nlq,17) -- strain rate factor used for the dynamic formulation based on quasi-static analysis  
-c       hisv(nlq,18) -- alphac is the compression factor given in paper in IJSS by Grassl et al. in equation 46
-c       hisv(nlq,19) -- equivalent strain tension eqstrT
-c       hisv(nlq,20) -- equivalent strain compression eqstrC
-c       hisv(nlq,21) -- total strain along xx
-c       hisv(nlq,22) -- total strain along yy
-c       hisv(nlq,23) -- total strain along zz
-c       hisv(nlq,24) -- total strain along xy
-c       hisv(nlq,25) -- total strain along yz
-c       hisv(nlq,26) -- total strain along xz
-c       hisv(nlq,27) -- equivalent strain (without rate factor influence)
+c       hsvs(nlq,35) - history variables
+c       hsvs(nlq,1) --- kappa
+c       hsvs(nlq,2) --- equivalent strain
+c       hsvs(nlq,3) --- plastic strain xx
+c       hsvs(nlq,4) --- plastic strain yy
+c       hsvs(nlq,5) --- plastic strain zz
+c       hsvs(nlq,6) --- plastic strain xy
+c       hsvs(nlq,7) --- plastic strain zy
+c       hsvs(nlq,8) --- plastic strain xz
+c       hsvs(nlq,9) --- kappa tension kdt
+c       hsvs(nlq,10) -- kappa tension 1 kdt1
+c       hsvs(nlq,11) -- kappa tension 2 kdt2
+c       hsvs(nlq,12) -- kappa compression kdc
+c       hsvs(nlq,13) -- kappa compression 1 kdc1
+c       hsvs(nlq,14) -- kappa compression 2 kdc2
+c       hsvs(nlq,15) -- damage variable tension omegaT (in LS-DYNA omegaT is written as wt)
+c       hsvs(nlq,16) -- damage variable tension omegaC (in LS-DYNA omegaC is written as wc)
+c       hsvs(nlq,17) -- strain rate factor used for the dynamic formulation based on quasi-static analysis  
+c       hsvs(nlq,18) -- alphac is the compression factor given in paper in IJSS by Grassl et al. in equation 46
+c       hsvs(nlq,19) -- equivalent strain tension eqstrT
+c       hsvs(nlq,20) -- equivalent strain compression eqstrC
+c       hsvs(nlq,21) -- total strain along xx
+c       hsvs(nlq,22) -- total strain along yy
+c       hsvs(nlq,23) -- total strain along zz
+c       hsvs(nlq,24) -- total strain along xy
+c       hsvs(nlq,25) -- total strain along yz
+c       hsvs(nlq,26) -- total strain along xz
+c       hsvs(nlq,27) -- equivalent strain (without rate factor influence)
 
 c We assume that elen contains the length associated with one 
 c integration point. This needs to be improved for triangular elements.
@@ -119,11 +117,11 @@ c       cm(20)	SRT (Strength strain rate type)
 c		     = 0.0: No rate effects        
 c                    = 1.0: Model code 2010 first branch only 
 c                    = 2.0: Model code 2010 first and second branch
-c       cm(21)	failflag 
+c       cm(21)	FAILFLG 
 c		     = 0.0: if not ALL  gausspoints of the element are damaged        
 c                    = 1.0: if ALL gausspoints of the element are damaged
 c     cm(22)	efc (Damage Compression: Strain/displacement threshold )
-c     cm(23)	damageflag (damage flag)
+c     cm(23)	DAMFLG (damage flag)
 c     cm(24)	pflag (print flag)
 c     bqs(nlq)  - pressure at each gauss point
       integer maxnip,nnm1,lft,llt
@@ -229,6 +227,8 @@ c      mx=48*(mxt(lft)-1)
 c
 c     Material constants
 c
+c$omp threadprivate (/aux34loc/)
+c$omp threadprivate (/cdpmc/)
       ym=cm(1)
       pr=cm(2)
       ecc=cm(3)
@@ -261,7 +261,7 @@ c This function needs allows us to run the code without having to enter all
 c default parameters
       call cdpm2u_giveDefaultValuesIfNotGiven()
       
-      cm(25) = printflag;
+      cm(24) = printflag;
       
       m0 = 3. * ( fc** 2. - ft**2. ) / ( fc * ft ) * ecc / ( ecc + 1. );      
       do i=lft,llt
@@ -351,7 +351,6 @@ c Write strain increment vector
                enddo
             else if ( converged .eq. 0 .and. 
      $              subIncFlag .eq. 1) then
-c               write(*,*) '*** Subincrementation required',subincCounter               
                call cdpm2u_computeStrainsfromStresses(sigEff,elStrain,
      $              ym,pr)
                do l=1,6
@@ -417,6 +416,7 @@ c     Compute norm of increment of plastic strains
      $        ym,pr)
          sum=sqrt(sum)
          rateFactor=hsvs(i,17)
+
          call cdpm2u_computeDamage(omegaC,omegaT,strainrate,
      $        rateFactor,alpha,epsilonT,epsilonC,kappaDT,kappaDT1,
      $        kappaDT2,kappaDC,kappaDC1,kappaDC2,sigEff,sum,
@@ -503,6 +503,8 @@ c     Subroutine to check if all model parameters have values. If a parameter do
      1     type,bs,wf,wf1,efc,ft1,sratetype,failflg,m0,gTol,
      1     damageflag,printflag
 c
+c$omp threadprivate (/cdpmc/)
+
       real epsilon
       if( pr .lt. 0) then
          pr = 0.2
@@ -517,7 +519,7 @@ c
          qh0=0.3
       end if
       if (hp .lt. 0.) then
-         hp=0.5
+         hp=0.01
       end if
       if (ah .le. 0.) then
          ah=8.e-2
@@ -534,11 +536,14 @@ c
       if (df .le. 0.) then
          df=0.85
       end if
+      if (type .le. 0.) then
+         type=0.
+      end if
       if (eratetype .le. 0.) then
          eratetype=0.
       end if
       if (efc .le. 0. ) then
-         efc=100.e-6
+         efc=1.e-4
       end if
       if (as .le. 0.) then
          as=15.
@@ -549,8 +554,8 @@ c
       if (sratetype .le. 0.) then
          sratetype=0.
       end if
-      if (damageflag .le. 0.) then
-         damageflag=0.
+      if (damageflag .lt. 0.) then
+         damageflag=1.
       end if
       if (gTol .le. 0.) then
          gTol=1.e-6
@@ -558,6 +563,9 @@ c
       if (ecc .le. 0.) then
          epsilon=ft*((1.16*fc)**2.-fc**2.)/(1.16*fc*(fc**2.-ft**2.))
          ecc=(1.+epsilon)/(2.-epsilon)
+      end if
+      if (printflag .lt. 0.) then
+         printflag = 0
       end if
 
 c Write output
@@ -589,9 +597,8 @@ c
       write(*,*) '     EQ.2.0: square of DIF times fracture energy'
       write(*,2) '   TYPE (Damage type)................ = ',type
       write(*,*) '     EQ.0.0: Linear softening           '
-      write(*,*) '     EQ.1.0: Bi-Linear softening        '
+      write(*,*) '     EQ.1.0: Bilinear softening        '
       write(*,*) '     EQ.2.0: Exponential softening      '
-      write(*,*) '     EQ.4.0: No damage                  '
       write(*,2) '   BS (Damage: ductility parameter)   = ',bs
       write(*,2) '   WF (Damage: disp threshold 0)..... = ',wf
       write(*,2) '   WF1 (Damage: disp threshold 1).... = ',wf1
@@ -602,14 +609,14 @@ c
       write(*,*) '     EQ.1.0: MC 2010 first branch'
       write(*,*) '     EQ.2.0: MC 2010 first and second branch'
       write(*,*) '   DAMAGEFLAG (damage flag)......... =  ',damageflag
-      write(*,*) '     EQ.0.0: standard model with two damage params'
-      write(*,*) '     EQ.1.0: iso model with one damage param'
+      write(*,*) '     EQ.0.0: no damage'
+      write(*,*) '     EQ.1.0: standard model with two damage params'
       write(*,*) '     EQ.2.0: standard model with one damage param'
-      write(*,*) '     EQ.3.0: no damage'
+      write(*,*) '     EQ.3.0: iso model with one damage param'
       write(*,*) '*****************************************************'
       write(*,*) '  History variables:                                 '
       write(*,*) '   Var  #1 = kappa'
-      write(*,*) '   Var  #2 = equivalient strain'
+      write(*,*) '   Var  #2 = equivalent strain'
       write(*,*) '   Var  #3 = plastic strain direction 1'
       write(*,*) '   Var  #4 = plastic strain dierction 2'
       write(*,*) '   Var  #5 = plastic strain direction 3'
@@ -697,6 +704,7 @@ c     derivative of plastic potential and yield surface are discontinuous.
      1     type,bs,wf,wf1,efc,ft1,sratetype,failflg,m0,gTol,
      1     damageflag,printflag
 c
+c$omp threadprivate (/cdpmc/)
       real apexStress,sigV,tempkappa,qh2,cdpm2u_qh2fun 
       integer rtype
 c     sigV              -----------  volumetric stress <Input>
@@ -741,7 +749,7 @@ c     rtype=0 is returned.
       common/cdpmc/ym,pr,ecc,qh0,ft,fc,hp,ah,bh,ch,dh,as,df,eratetype,
      1     type,bs,wf,wf1,efc,ft1,sratetype,failflg,m0,gTol,
      1     damageflag,printflag
-
+c$omp threadprivate (/cdpmc/)
       real sigV,rho,apexStress,kappa,stress(6),theta,
      $     yieldValue,yieldValueMid,sig2,dSig,sigMid,sigAnswer,
      $     ratioPotential,kappa0,tempKappaP, cdpm2u_computeTempKappa,
@@ -885,7 +893,7 @@ c     Function to calculate the ratio of the derivatives of the plastic potentia
       common/cdpmc/ym,pr,ecc,qh0,ft,fc,hp,ah,bh,ch,dh,as,df,eratetype,
      1     type,bs,wf,wf1,efc,ft1,sratetype,failflg,m0,gTol,
      1     damageflag,printflag
-
+c$omp threadprivate (/cdpmc/)
       real AGParam,BGParam,qh1,qh2,cdpm2u_qh1fun,
      $     cdpm2u_qh2fun,R,mQ,kappa,
      $     sig,rho,
@@ -1130,7 +1138,7 @@ c     Subroutine to calculate the derivative of the yield function with respect 
       common/cdpmc/ym,pr,ecc,qh0,ft,fc,hp,ah,bh,ch,dh,as,df,eratetype,
      1     type,bs,wf,wf1,efc,ft1,sratetype,failflg,m0,gTol,
      1     damageflag,printflag
-      
+c$omp threadprivate (/cdpmc/)      
       real rFunction,qh1,qh2, Al,rho,theta,cdpm2u_qh1fun,
      $     cdpm2u_qh2fun,kappa,
      $     dfdsig,dfdrho,sig,dfdInv(2),Bl
@@ -1175,7 +1183,7 @@ c     Subroutine to calculate the derivatives of the plastic potential function 
       common/cdpmc/ym,pr,ecc,qh0,ft,fc,hp,ah,bh,ch,dh,as,df,eratetype,
      1     type,bs,wf,wf1,efc,ft1,sratetype,failflg,m0,gTol,
      1     damageflag,printflag
-      
+c$omp threadprivate (/cdpmc/)      
       real qh1,qh2, Al,rho,theta,cdpm2u_qh1fun,cdpm2u_qh2fun,kappa,
      $     Bl,AGParam,BGParam,R,mQ,dgdsig,dgdrho,sig,dgdInv(2)
 c     sig              -------------  volumetric stress  <Input>
@@ -1216,7 +1224,7 @@ c     Subroutine to calculate the derivatives of the derivatives of the plastic 
       common/cdpmc/ym,pr,ecc,qh0,ft,fc,hp,ah,bh,ch,dh,as,df,eratetype,
      1     type,bs,wf,wf1,efc,ft1,sratetype,failflg,m0,gTol,
      1     damageflag,printflag
-      
+c$omp threadprivate (/cdpmc/)      
       real qh1,qh2, Al,rho,theta,cdpm2u_qh1fun,
      $     cdpm2u_qh2fun,kappa, Bl,AGParam,
      $     BGParam,R,mQ,sig, dMQDSig,dAlDSig,dBlDSig,dAlDRho, dBlDRho,
@@ -1298,7 +1306,7 @@ c     Subroutine to calculate the derivative of the yield function with respect 
       common/cdpmc/ym,pr,ecc,qh0,ft,fc,hp,ah,bh,ch,dh,as,df,eratetype,
      1     type,bs,wf,wf1,efc,ft1,sratetype,failflg,m0,gTol,
      1     damageflag,printflag
-
+c$omp threadprivate (/cdpmc/)
       real dfdkappa,sig,rho,theta,kappa,qh1,qh2,cdpm2u_qh1fun,
      $     cdpm2u_qh2fun,dfdqh1,
      $     dfdqh2,dqh1dkappa,dqh2dkappa,cdpm2u_dqh1dkappaFun,
@@ -1351,7 +1359,7 @@ c     Subroutine to calculate the derivative of the plastic potential function w
       common/cdpmc/ym,pr,ecc,qh0,ft,fc,hp,ah,bh,ch,dh,as,df,eratetype,
      1     type,bs,wf,wf1,efc,ft1,sratetype,failflg,m0,gTol,
      1     damageflag,printflag
-
+c$omp threadprivate (/cdpmc/)
       
       real qh1,cdpm2u_qh1fun,qh2,cdpm2u_qh2fun,dqh1dkappa,
      $     cdpm2u_dqh1dkappaFun,dqh2dkappa,
@@ -1545,7 +1553,7 @@ c     The equation is given in eq. (18) of IJSS paper by P. Grassl et al. Return
       common/cdpmc/ym,pr,ecc,qh0,ft,fc,hp,ah,bh,ch,dh,as,df,eratetype,
      1     type,bs,wf,wf1,efc,ft1,sratetype,failflg,m0,gTol,
      1     damageflag,printflag
-
+c$omp threadprivate (/cdpmc/)
       
       real rFunction,qh1,qh2, Al,sigV,rho,theta,cdpm2u_qh1fun,
      $     cdpm2u_qh2fun,kappa,
@@ -1672,7 +1680,7 @@ c     Function to calculate ductility measure according to eq. (33) of IJSS pape
       common/cdpmc/ym,pr,ecc,qh0,ft,fc,hp,ah,bh,ch,dh,as,df,eratetype,
      1     type,bs,wf,wf1,efc,ft1,sratetype,failflg,m0,gTol,
      1     damageflag,printflag
-
+c$omp threadprivate (/cdpmc/)
 
       real thetaConst,x,  sigV,rho,theta ,eh,fh,answer
 c     sigV ---------------- volumetric stress <Input>
@@ -1706,7 +1714,7 @@ c     Subroutine to compute the derivative of the ductility measure with respect
       common/cdpmc/ym,pr,ecc,qh0,ft,fc,hp,ah,bh,ch,dh,as,df,eratetype,
      1     type,bs,wf,wf1,efc,ft1,sratetype,failflg,m0,gTol,
      1     damageflag,printflag
-      
+c$omp threadprivate (/cdpmc/)      
       real dDuctilityMeasureDInv(2), sig,rho, kappa,theta,x,dXDSig,
      $     EHard,FHard,dDuctilityMeasureDX,theta1
 c     sig  ---------------- volumetric stress <Input>
@@ -1892,7 +1900,7 @@ c     Subroutine to perform the damage return. Both compressive and tensile dama
       common/cdpmc/ym,pr,ecc,qh0,ft,fc,hp,ah,bh,ch,dh,as,df,eratetype,
      1     type,bs,wf,wf1,efc,ft1,sratetype,failflg,m0,gTol,
      1     damageflag,printflag
-
+c$omp threadprivate (/cdpmc/)
 
       real omegaC,omegaT,tempRateFactor,rateFactor,epsilonT,
      $     epsilonC,kappaDT,kappaDT1,kappaDT2,kappaDC,kappaDC1,kappaDC2,
@@ -2184,7 +2192,7 @@ c     Function to calculate equivalent strain used in the damage part according 
       common/cdpmc/ym,pr,ecc,qh0,ft,fc,hp,ah,bh,ch,dh,as,df,eratetype,
      1     type,bs,wf,wf1,efc,ft1,sratetype,failflg,m0,gTol,
      1     damageflag,printflag
-      
+c$omp threadprivate (/cdpmc/)
       real  answer, rFunction,thetaElastic,rhoElastic,
      $     sigElastic, pHelp,qHelp,help,e0
 c     sigElastic, rhoElastic, thetaElastic ---- volumetric and deviatoric stresses and Lode angle of the effective stress tensor 
@@ -2220,7 +2228,7 @@ c     Function to calculate damage due to tension.
       common/cdpmc/ym,pr,ecc,qh0,ft,fc,hp,ah,bh,ch,dh,as,df,eratetype,
      1     type,bs,wf,wf1,efc,ft1,sratetype,failflg,m0,gTol,
      1     damageflag,printflag
-      
+c$omp threadprivate (/cdpmc/)
       real kappa, kappaOne, kappaTwo, omegaOld,residual,le,
      $     residualDerivative,omega,tol,help,e0,yieldTolDamage,
      $     rateFactor,wf1Mod,wfMod,residualStrength
@@ -2341,7 +2349,7 @@ c     Function to calculate damage due to compression
       common/cdpmc/ym,pr,ecc,qh0,ft,fc,hp,ah,bh,ch,dh,as,df,eratetype,
      1     type,bs,wf,wf1,efc,ft1,sratetype,failflg,m0,gTol,
      1     damageflag,printflag
-      
+c$omp threadprivate (/cdpmc/)
       real kappa, kappaOne, kappaTwo, omegaOld,residual,dResidualDOmega,
      $     exponent,omega,tol,kappaDC,e0,yieldTolDamage,rateFactor,
      $     efcMod
@@ -2459,7 +2467,7 @@ c     Special treatment is applied during transition from hardening (pre-peak) t
       common/cdpmc/ym,pr,ecc,qh0,ft,fc,hp,ah,bh,ch,dh,as,df,eratetype,
      1     type,bs,wf,wf1,efc,ft1,sratetype,failflg,m0,gTol,
      1     damageflag,printflag
-
+c$omp threadprivate (/cdpmc/)
       real   tempKappaD,plastStrNorm, kappaD,factor,qh2,alpha,rho,e0,
      $     cdpm2u_qh2fun,extraFactor,tempKappa,kappa,
      $     yieldTolDamage,answer
@@ -2889,6 +2897,7 @@ c
           enddo
         enddo
       enddo
-      
+
       return
+
       end 

@@ -22,9 +22,10 @@ c SOFTWARE.
 c**********************************************************************
 c
 c      
-      Subroutine umat50v(cm,d1,d2,d3,d4,d5,d6,sig1,sig2,
+      subroutine umat50v(cm,d1,d2,d3,d4,d5,d6,sig1,sig2,
      . sig3,sig4,sig5,sig6,epsps,hsvs,lft,llt,dt1siz,capa,
-     . etype,tt,temps,failels,nlqa,crv,cma,qmat,elsizv,idelev)
+     . etype,tt,temps,failels,nlqa,crv,nnpcrv,cma,qmat,elsizv,idelev,
+     . reject)
 c
 c
 c*****************************************************************
@@ -48,8 +49,9 @@ c*****************************************************************
       dimension sig1(*),sig2(*),sig3(*),sig4(*),sig5(*),sig6(*)
       dimension cm(*),epsps(*),hsvs(nlq,*),dt1siz(*)
       dimension temps(*),crv(lq1,2,*),cma(*),qmat(nlq,3,3),elsizv(*)
+      integer nnpcrv(*)
       integer idelev(*)
-      logical failels(*)
+      logical failels(*),reject
       character*5 etype
 c
       real eps(6);
@@ -86,8 +88,7 @@ c       hsvs(nlq,27) -- equivalent strain (without rate factor influence)
 
 c We assume that elen contains the length associated with one 
 c integration point. This needs to be improved for triangular elements.
-      real elen,trsh
-      common/aux34loc/trsh(nlq),elen(nlq)
+         
 c       cm(1)   YM (Youngs modulus)
 c	cm(2)	PR (Poissons ratio)
 c	cm(3)	ECC (Eccentricity)
@@ -227,7 +228,6 @@ c      mx=48*(mxt(lft)-1)
 c
 c     Material constants
 c
-c$omp threadprivate (/aux34loc/)
 c$omp threadprivate (/cdpmc/)
       ym=cm(1)
       pr=cm(2)
@@ -405,7 +405,7 @@ c Initialize parameters used in the damage algorithm
          omegaC=hsvs(i,16)
          alpha=hsvs(i,18)
          call cdpm2u_computeAlpha(effStressT,effStressC,sigEff,alpha)
-         length=elen(i)
+         length = elsizv(i)
          sum=0.
          do l=1,6
 c     Compute norm of increment of plastic strains       

@@ -9,7 +9,7 @@ The code is based on the constitutive models described in these papers:
 More information about the model can be found on https://petergrassl.com
 
 
-Copyright (c) 2021 Peter Grassl
+Copyright (c) 2021 Peter Grassl and Dimitrios Xenos
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

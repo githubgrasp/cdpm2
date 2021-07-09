@@ -1,6 +1,6 @@
 c*****************************************************************
 c
-c Copyright (c) 2021 Peter Grassl
+c Copyright (c) 2021 Peter Grassl and Dimitrios Xenos
 c
 c Permission is hereby granted, free of charge, to any person obtaining a copy
 c of this software and associated documentation files (the "Software"), to deal

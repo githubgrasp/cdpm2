@@ -2162,8 +2162,7 @@ c     computeEquivalentStrain -------- function to calculate equivalent strain a
      $     (abs(equivStrainPlus - equivStrainOld) .gt. gtol/10. .and. 
      $     abs(equivStrainMinus - equivStrainNew) .gt. gtol/10.)) then
          unloadingFlag=1
-         write(*,*) '*** Unloading and reloading occurs.'
-         write(*,*) 'within a single step. Subincrementation performed' 
+c        Unloading and reloading occurs within a single step. Subincrementation performed' 
          do i=1,100
             do j=1,6
                stress1(j)=stressOld(j)+deltaStress(j)*FLOAT(i)/100.0 

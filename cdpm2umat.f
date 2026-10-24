@@ -318,13 +318,23 @@ c Write strain increment vector
                   call cdpm2u_performRegularReturn(sigEff, 
      $                 tempKappaP,converged,ym,pr,gTol)
                end if
-            else
-               converged=0
-               do l=1,6        
-                  plastStrain(l)=hsvs(i,l+2)
+            else if ( subIncFlag .eq. 1 ) then
+c     Elastic subincrement: accept it and continue with the remaining
+c     strain. Plastic strain of previous subincrements is kept.
+               do l=1,6
+                  convStrain(l)=tempTotStrain(l)
+                  deltaTotStrain(l)=totStrain(l)-convStrain(l)
+                  tempTotStrain(l)=totStrain(l)
                enddo
+               subincCounter = 0
+               subincFlag=0
+               converged=1
+               cycle
+            else
+c     Elastic (remaining) step: keep the current plastic strain
+               converged=0
                goto 925
-            end if                     
+            end if
             
             if ( converged .eq. 1 ) then
                subincCounter=subincCounter+1

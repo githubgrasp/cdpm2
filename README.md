@@ -1,5 +1,8 @@
 # cdpm2
 This repository contains the source code of fortran implementation of cdpm2 in LSDYNA and the corresponding example and documentation.
+
+The input parameters and history variables are described in [MAT_CDPM2.rst](MAT_CDPM2.rst). An example material card is given in [materialUser.k](materialUser.k).
+
 The code is based on the constitutive models described in these papers:
 
 1) Grassl, Peter, Dimitrios Xenos, Ulrika Nyström, Rasmus Rempling, and Kent Gylltoft. "CDPM2: A damage-plasticity approach to modelling the failure of concrete." International Journal of Solids and Structures 50, no. 24 (2013): 3805-3816.

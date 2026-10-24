@@ -3,7 +3,7 @@ $
 $---+----1----+----2----+----3----+----4----+----5----+----6----+----7----+----8
 $        |         |         |         |         |         |         |         |
 $#     mid        ro        mt       lmc       nhv    iortho     ibulk        ig
-         1    2.30E3        50        26        27         0        25        26
+         1    2.30E3        50        26        28         0        25        26
 $        |         |         |         |         |         |         |         |
 $#   ivect     ifail    itherm    ihyper      ieos      lmca    unused    unused
          1         0         0         0         0         0         0         0

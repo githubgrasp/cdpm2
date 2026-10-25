@@ -74,7 +74,7 @@ c       hsvs(nlq,13) -- kappa compression 1 kdc1
 c       hsvs(nlq,14) -- kappa compression 2 kdc2
 c       hsvs(nlq,15) -- damage variable tension omegaT (in LS-DYNA omegaT is written as wt)
 c       hsvs(nlq,16) -- damage variable tension omegaC (in LS-DYNA omegaC is written as wc)
-c       hsvs(nlq,17) -- strain rate factor used for the dynamic formulation based on quasi-static analysis  
+c       hsvs(nlq,17) -- rate factor for the next step
 c       hsvs(nlq,18) -- alphac is the compression factor given in paper in IJSS by Grassl et al. in equation 46
 c       hsvs(nlq,19) -- equivalent strain tension eqstrT
 c       hsvs(nlq,20) -- equivalent strain compression eqstrC
@@ -85,7 +85,10 @@ c       hsvs(nlq,24) -- total strain along xy
 c       hsvs(nlq,25) -- total strain along yz
 c       hsvs(nlq,26) -- total strain along xz
 c       hsvs(nlq,27) -- equivalent strain (without rate factor influence)
-c       hsvs(nlq,28) -- principal strain used for the strain rate (rateStrain)
+c       hsvs(nlq,28) -- max principal strain used for the strain rate
+c       hsvs(nlq,29) -- min principal strain used for the strain rate
+c       hsvs(nlq,30) -- rate factor tension
+c       hsvs(nlq,31) -- rate factor compression
 
 c We assume that elen contains the length associated with one 
 c integration point. This needs to be improved for triangular elements.
@@ -103,10 +106,11 @@ c	cm(10)	CH (Hardening ductility measure)
 c	cm(11)	DH (Hardening ductility measure)
 c	cm(12)	AS (Damage ductility measure)
 c	cm(13)	DF (Dilation constant)
-c       cm(14)  ERT (Energy strain rate type, only used if SRT > 0)
+c       cm(14)  ERT (Exponent n of the rate effect on the fracture
+c                    energy, only used if SRT > 0). The fracture energy
+c                    is multiplied by rateFactor**n, 0 <= n <= 1
 c		     = 0.0: Rate does not affect fracture energy
-c                    = 1.0: Rate effect on fracture energy
-c                    = 2.0: Square of rate effect on fracture energy
+c                    = 1.0: Fracture energy increased by rate factor
 c       cm(15)	TYPE (tensile damage type)
 c		     = 0.0: Linear softening     
 c                    = 1.0: Bi-Linear softening
@@ -150,7 +154,7 @@ c     fc   --------------- compressive strength
 c     hp   --------------- value of the derivative of the 2nd hardening function as described in eq. (31) of the IJSS paper by Grassl et al.
 c     ah,bh,ch,dh -------- hardening parameters used in eq. (33) of the IJSS paper by Grassl et al.
 c     as,bs,df ----------- softening  parameters used in eqs. (56) and (50) of the IJSS paper by Grassl et al.
-c     eratetype ---------  parameter denoting whether and how strain rate dependence is taken into account for fracture energy
+c     eratetype ---------  exponent of the rate dependence of the fracture energy
 c     type --------------- softening type used in the formulation of the tensile damage variable
 c     wf   --------------- max crack opening displacement used in the tensile damage law
 c     wf1  --------------- max crack opening displacement used in the bilinear tensile damage law
@@ -275,13 +279,21 @@ c Write strain increment vector
          eps(5) = d5(i)
          eps(6) = d6(i)
 
+c     Strengths are scaled by the rate factor of the current step by
+c     performing the return for the strains divided by it and
+c     multiplying the resulting stress by it.
+         rateFactor=1.
+         if (sratetype .gt. 0. .and. hsvs(i,17) .gt. 0.) then
+            rateFactor=hsvs(i,17)
+         end if
+
          do l=1,6
-            totStrain(l)   = eps(l) + hsvs(i,l+20)
-            plastStrain(l) =  hsvs(i,l+2)
-            oldStrain(l)  = hsvs(i,l+20)
+            totStrain(l)   = (eps(l) + hsvs(i,l+20))/rateFactor
+            plastStrain(l) =  hsvs(i,l+2)/rateFactor
+            oldStrain(l)  = hsvs(i,l+20)/rateFactor
             convStrain(l) = oldStrain(l)
             tempTotStrain(l) = totStrain(l)
-            deltaTotStrain(l) = eps(l)
+            deltaTotStrain(l) = eps(l)/rateFactor
          enddo
 
          subincCounter=0
@@ -380,8 +392,16 @@ c     aborting the whole analysis
             end if
          end do
          
-                     
  925     continue
+         do l=1,6
+            totStrain(l)=totStrain(l)*rateFactor
+            plastStrain(l)=plastStrain(l)*rateFactor
+            sigEff(l)=sigEff(l)*rateFactor
+         enddo
+
+         alpha=hsvs(i,18)
+         call cdpm2u_computeAlpha(effStressT,effStressC,sigEff,alpha)
+
          if (damageflag .eq. 0.0) then
             omegaT=0.0
             omegaC=0.0            
@@ -394,8 +414,6 @@ c     aborting the whole analysis
             kappaDC2=0.0
             omegaT=0.0
             omegaC=0.0
-            rateFactor=0.0
-            alpha=0.0
             epsilonT=0.0
             epsilonC=0.0
             do l=1,6
@@ -406,8 +424,6 @@ c               sig(i,l)=sigEff(l)
          end if
 
 c Initialize parameters used in the damage algorithm              
-         rateFactor=hsvs(i,17)
-
          epsilonT=hsvs(i,19)
          epsilonC=hsvs(i,20)
          kappaDT=hsvs(i,9)
@@ -418,8 +434,6 @@ c Initialize parameters used in the damage algorithm
          kappaDC2=hsvs(i,14)
          omegaT=hsvs(i,15)
          omegaC=hsvs(i,16)
-         alpha=hsvs(i,18)
-         call cdpm2u_computeAlpha(effStressT,effStressC,sigEff,alpha)
          length = elsizv(i)
          sum=0.
          do l=1,6
@@ -430,10 +444,8 @@ c     Compute norm of increment of plastic strains
          call cdpm2u_computeStressesfromStrains(stressOld,deltaElStrain,
      $        ym,pr)
          sum=sqrt(sum)
-         rateFactor=hsvs(i,17)
 
-         call cdpm2u_computeDamage(omegaC,omegaT,totStrain,
-     $        hsvs(i,28),dt1siz(i),
+         call cdpm2u_computeDamage(omegaC,omegaT,
      $        rateFactor,alpha,epsilonT,epsilonC,kappaDT,kappaDT1,
      $        kappaDT2,kappaDC,kappaDC1,kappaDC2,sigEff,sum,
      $        tempKappaP,length,stressOld,hsvs(i,18),hsvs(i,27))
@@ -451,6 +463,15 @@ c     Compute norm of increment of plastic strains
          enddo
 
  152     continue
+
+c     Rate factor for the next step. It is kept constant once damage
+c     has started.
+         if (sratetype .gt. 0. .and. omegaT .eq. 0. .and.
+     $        omegaC .eq. 0.) then
+            call cdpm2u_updateRateFactor(alpha,totStrain,dt1siz(i),
+     $           hsvs(i,28),hsvs(i,29),hsvs(i,30),hsvs(i,31),
+     $           rateFactor)
+         end if
          
 c     Write the history variable at the end of the routine
          epsps(i)= tempkappaP 
@@ -554,6 +575,9 @@ c$omp threadprivate (/cdpmc/)
       end if
       if (eratetype .le. 0.) then
          eratetype=0.
+      else if (eratetype .gt. 1.) then
+         write(*,*) '*** CDPM2: ERT must be between 0 and 1 ***'
+         stop
       end if
       if (efc .le. 0. ) then
          efc=1.e-4
@@ -610,7 +634,7 @@ c
       write(*,2) '   DH (Hardening ductility measure).. = ',dh
       write(*,2) '   AS (Damage ductility measure)..... = ',as
       write(*,2) '   DF (Dilation constant)............ = ',df
-      write(*,2) '   ERATETYPE (Energy rate type)...... = ',eratetype
+      write(*,2) '   ERT (Energy rate exponent)........ = ',eratetype
       write(*,*) '     EQ.0.0: constant fracture energy            '
       write(*,*) '     EQ.1.0: DIF times fracture energy'
       write(*,*) '     EQ.2.0: square of DIF times fracture energy'
@@ -651,7 +675,10 @@ c
       write(*,*) '   Var #20 = equivalent strain compression'
       write(*,*) '   Var #21-#26 = total strain xx,yy,zz,xy,yz,xz'
       write(*,*) '   Var #27 = equivalent strain'
-      write(*,*) '   Var #28 = principal strain used for strain rate'
+      write(*,*) '   Var #28 = max principal strain for strain rate'
+      write(*,*) '   Var #29 = min principal strain for strain rate'
+      write(*,*) '   Var #30 = rate factor tension'
+      write(*,*) '   Var #31 = rate factor compression'
       write(*,*) '*****************************************************'
       write(*,*) '  Check that the bulk modulus and shear modulus are  '
       write(*,*) '  correctly calculated. They MUST be set on the      '
@@ -1832,38 +1859,40 @@ c     Determine the two factors from the stress
       return
       end
 
-      real function cdpm2u_computeRateFactor(alpha,strain,rateStrain,
-     $     deltaTime,tol,sratetype)
-c     Function to incorporate impact effects in the constitutive law and calculate rateFactor. 
-c     All functions used are based on Model Code 2010. 
-      
-      real strain(6),princDir(3,3),princStrain(3),max,min,tol,
-     $     strainRate,ratioT,ratioC,rateFactorTension,
-     $     rateFactorCompression,alpha,rateStrain,deltaTime,sratetype
+      subroutine cdpm2u_updateRateFactor(alpha,strain,deltaTime,
+     $     rateStrainT,rateStrainC,rateFactorT,rateFactorC,rateFactor)
+c     Subroutine to compute the rate factor for the next step from the
+c     rates of the max and min principal strains. The rate factors in
+c     tension and compression are based on Model Code 2010 and are held
+c     during unloading.
+      real ym,pr,ecc,qh0,ft,fc,hp,ah,bh,ch,dh,as,df,eratetype,
+     1     type,bs,wf,wf1,efc,ft1,sratetype,failflg,m0,gTol,
+     1     damageflag,printflag
+      common/cdpmc/ym,pr,ecc,qh0,ft,fc,hp,ah,bh,ch,dh,as,df,eratetype,
+     1     type,bs,wf,wf1,efc,ft1,sratetype,failflg,m0,gTol,
+     1     damageflag,printflag
+c$omp threadprivate (/cdpmc/)
+      real strain(6),princDir(3,3),princStrain(3),max,min,
+     $     strainRateT,strainRateC,ratio,rateFactorT,rateFactorC,
+     $     alpha,rateStrainT,rateStrainC,deltaTime,rateFactor
       integer k
-c     alpha                     --------------   alpha is the variable used in CDPM2U to evaluate contribution of compressive stresses to principal stress tensor  <Input>
-c     strain(6)                 --------------   total strain {xx,yy,zz,xy,yz,xz} <Input>
-c     rateStrain                --------------   principal strain used for the strain rate in the previous step <Input/Output>
-c     deltaTime                 --------------   time step length <Input>
-c     tol                       --------------   tolerance used to identify whether it is a tensile or compressive stress state <Input>
-c     sratetype                 --------------   =1: first branch of MC2010, =2: first and second branch <Input>
-c     princDir(3,3)             --------------   matrix containing the principal directions of the strain tensor. Eigenvectors stored columnwise
-c     princStrain(3)            --------------   array containing the 3 principal strains
-c     max                       --------------   max principal strain
-c     min                       --------------   min principal strain
-c     strainRate                --------------   rate of the max (tension) or min (compression) principal strain
-c     ratioT                    --------------   strainRate/strainRateTension0 (see MC2010)
-c     ratioC                    --------------   strainRate/strainRateCompression0 (see MC2010)
-c     rateFactorTension         --------------   contribution of tensile strain rates to the rate Factor
-c     rateFactorCompression     --------------   contribution of compressive strain rates to the rate Factor
-      rateFactorTension=1.
-      rateFactorCompression=1.
-      
+c     alpha           --------------  contribution of compressive stresses (eq. 46 of the IJSS paper) <Input>
+c     strain(6)       --------------  total strain {xx,yy,zz,xy,yz,xz} <Input>
+c     deltaTime       --------------  time step length <Input>
+c     rateStrainT     --------------  max principal strain of the previous step <Input/Output>
+c     rateStrainC     --------------  min principal strain of the previous step <Input/Output>
+c     rateFactorT     --------------  rate factor in tension <Input/Output>
+c     rateFactorC     --------------  rate factor in compression <Input/Output>
+c     rateFactor      --------------  rate factor for the next step <Output>
+c     strainRateT     --------------  rate of the max principal strain (positive for loading)
+c     strainRateC     --------------  rate of the min principal strain (positive for loading)
+      if (rateFactorT .le. 0.) rateFactorT=1.
+      if (rateFactorC .le. 0.) rateFactorC=1.
+
       call cdpm2u_computePrincValues(strain,princStrain,1,princDir)
       
       max= -1.e20
       min = 1.e20
-
       do k=1,3
          if (max .lt. princStrain(k)) then
             max=princStrain(k)           
@@ -1873,52 +1902,42 @@ c     rateFactorCompression     --------------   contribution of compressive str
          end if
       enddo
       
-      if ( 1. - alpha .gt.tol ) then 
-         strainRate = (max-rateStrain)/deltaTime
-         rateStrain = max
-      else
-         strainRate = (min-rateStrain)/deltaTime
-         rateStrain = min
+      strainRateT = (max-rateStrainT)/deltaTime
+      strainRateC = -(min-rateStrainC)/deltaTime
+      rateStrainT = max
+      rateStrainC = min
+
+c     Tension
+      if (strainRateT .gt. 0.) then
+         ratio= strainRateT/1.e-6
+         if ( strainRateT .le. 1.e-6 ) then
+            rateFactorT = 1.
+         else if (sratetype .eq. 1. .or. strainRateT .lt. 10.) then
+            rateFactorT = ratio**0.018
+         else 
+            rateFactorT = 0.0062 * (ratio**(1./3.))
+         endif
       endif
 
-      ratioT= strainRate/1.e-6
-      if (sratetype .eq. 1.) then
-         if ( strainRate .gt. 1.e-6 ) then
-            rateFactorTension = ratioT**0.018
-         endif
-      else if (sratetype .eq. 2.) then
-         if ( strainRate .lt. 1.e-6 ) then
-            rateFactorTension = 1.
-         else if ( strainRate .lt. 10.) then
-            rateFactorTension = ratioT**0.018
+c     Compression
+      if (strainRateC .gt. 0.) then
+         ratio= strainRateC/30.e-6
+         if ( strainRateC .le. 30.e-6 ) then
+            rateFactorC = 1.
+         else if (sratetype .eq. 1. .or. strainRateC .lt. 30.) then
+            rateFactorC = ratio**0.014
          else 
-            rateFactorTension = 0.0062 * (ratioT **(1./3.))
+            rateFactorC = 0.012 * (ratio**(1./3.))
          endif
       endif
       
-      ratioC= strainRate/(-30.e-6)
-      if (sratetype .eq. 1.) then
-         if ( strainRate .lt. -30.e-6 ) then
-            rateFactorCompression = ratioC**0.014
-         endif
-      else if (sratetype .eq. 2.) then
-         if ( strainRate .gt. -30.e-6 ) then
-            rateFactorCompression = 1.
-         else if ( strainRate .gt. -30.) then
-            rateFactorCompression = ratioC**0.014
-         else 
-            rateFactorCompression =  0.012*(ratioC**(1./3.))
-         endif
-      endif
-      
-      cdpm2u_computeRateFactor = ( 1. - alpha ) * rateFactorTension + 
-     $     alpha * rateFactorCompression
+      rateFactor = ( 1. - alpha ) * rateFactorT + alpha * rateFactorC
 
       return
       end
 
-      subroutine cdpm2u_computeDamage(omegaC,omegaT,strain,
-     $     rateStrain,deltaTime,rateFactor,alpha,epsilonT,epsilonC,kappaDT,kappaDT1,kappaDT2,
+      subroutine cdpm2u_computeDamage(omegaC,omegaT,
+     $     rateFactor,alpha,epsilonT,epsilonC,kappaDT,kappaDT1,kappaDT2,
      $     kappaDC,kappaDC1,kappaDC2,stress,deltaPlasticStrainNormT,
      $     tempKappaP,len,stressOld,oldAlpha,epsilon)
 c     Subroutine to perform the damage return. Both compressive and tensile damage variables are calculated.
@@ -1930,14 +1949,13 @@ c     Subroutine to perform the damage return. Both compressive and tensile dama
      1     damageflag,printflag
 c$omp threadprivate (/cdpmc/)
 
-      real omegaC,omegaT,tempRateFactor,rateFactor,epsilonT,
+      real omegaC,omegaT,rateFactor,epsilonT,
      $     epsilonC,kappaDT,kappaDT1,kappaDT2,kappaDC,kappaDC1,kappaDC2,
      $     stress(6),deltaPlasticStrainNormT,deltaPlasticStrainNormC,
      $     tempKappaP,len,omegaOldC,omegaOldT,alpha,sigElastic,
      $     rhoElastic, thetaElastic,pHelp,help,tempEquivStrain,qhelp,
      $     tempEquivStrainT,tempEquivStrainC,fsT,fsC,ducMeas,Rs,
-     $     strain(6),rateStrain,deltaTime,
-     $     yieldTolDamage,cdpm2u_computeRateFactor,
+     $     yieldTolDamage,
      $     deltaPlasticStrainNormTNew,
      $     cdpm2u_computeDeltaPlasticStrainNormT,
      $     deltaPlasticStrainNormCNew,
@@ -1946,16 +1964,13 @@ c$omp threadprivate (/cdpmc/)
      $     cdpm2u_computeDamageT,cdpm2u_computeDamageC,
      $     cdpm2u_computeEquivalentStrain,stressOld(6),
      $     minEquivStrain,oldAlpha,epsilon
-      integer unloadingFlag,step1flag
+      integer unloadingFlag
 c     omegaC          --------------- compressive damage variable                        <Input/Output>
 c     omegaT          --------------- tensile damage variable                            <Input/Output>
-c     strain(6)       --------------- total strain                             <Input>
-c     rateStrain      --------------- principal strain used for strain rate    <Input/Output>
-c     deltaTime       ---------------  time step length     <Input>
-c     rateFactor      --------------- variable to incorporate impact effects on the constitutive law  <Input/Output>
+c     rateFactor      --------------- rate factor of the current step. Strains are divided by it <Input>
 c     alpha           --------------- variable showing the contribution of damage on the strains      <Input/Output>
-c     epsilonT        --------------- tensile equivalent strain                <Input/Output>
-c     epsilonC        --------------- compressive equivalent strain            <Input/Output>
+c     epsilonT        --------------- tensile equivalent strain (without rate factor) <Input/Output>
+c     epsilonC        --------------- compressive equivalent strain (without rate factor) <Input/Output>
 c     epsilon         ---------------  old equivalent strain (no rate influnce)            <Input/Output>
 c     kappaDT         --------------- history parameter kappaDT                <Input/Output>
 c     kappaDT1        --------------- history parameter kappaDT1               <Input/Output>
@@ -1981,75 +1996,42 @@ c     yieldTolDamage  --------------- tolerance used in the damage algorithm for
 c     Rs              --------------- variable used in the calculation of the ductility measure for damage given in eq.(57) of the IJSS paper by Grassl et al.
 c     xs              --------------- ductility measure for damage given in eq.(56) of the IJSS paper by Grassl et al.
 c     fsT,fsC         --------------- loading function for the tensile and compressive damage variables
-c     cdpm2u_computeRateFactor ------------- function used for the calculation of the rate factor to include impact effects on the constitutive law
 c     omegaOldT,omegaOldC ----------- old (previous step) tensile and compressive damage variables
 c     computeEquivalentStrain -------- function to calculate equivalent strain according to eq. 37 if the IJSS paper by Grassl et al
 c     unloadingFlag    -------------- flag indicating whether unloading and reloading is occuring during the current step (e.g. transition from tension to compression)
 c                                        =1 unloading and reloading occur within a step
 c                                        =0  no unloading and reloading occur within a step
 c     minEquivStrain    -------------- when unloading is occuring corresponds to the minEquivStrain before reloading occurs
-c     step1flag    -------------- flag indicating whether we are at the first step
-c                                        =1 it is analysis 1st step
-c                                        =0  it not analysis 1st step
 
       e0=ft/ym
       yieldTolDamage=gTol*10.0
       omegaOldC=omegaC
       omegaOldT=omegaT
       deltaPlasticStrainNormC=deltaPlasticStrainNormT
-      if (rateFactor .eq. 0.) then
-         step1flag=1
-         rateFactor=1.
-      else
-         step1flag=0
-      end if
       call cdpm2u_checkForUnAndReloading(stress,stressOld,
      $     unloadingFlag,minEquivStrain,tempEquivStrain,epsilon,ym,pr,
      $     gtol)
       
 c-------------------Compute tensile and compressive equivalent strains-------------------------------------
-      if (sratetype .gt. 0.0 .and. omegaC .eq. 0. .and.
-     $     omegaT.eq. 0. ) then
-         tempRateFactor=cdpm2u_computeRateFactor(alpha,strain,
-     $        rateStrain,deltaTime,gTol,sratetype)
-      else 
-         tempRateFactor=rateFactor
-      end if
-      tempEquivStrainT=epsilonT+(tempEquivStrain-epsilon)/
-     $     tempRateFactor
+c     Equivalent strains are stored without the rate factor and
+c     divided by it here, so that damage starts when the effective
+c     stress reaches the scaled yield surface.
+      tempEquivStrainT=(epsilonT+tempEquivStrain-epsilon)/rateFactor
       
       if (unloadingFlag .eq. 0) then
-         tempEquivStrainC=epsilonC+(tempEquivStrain-epsilon)*alpha/
-     $        tempRateFactor
+         tempEquivStrainC=(epsilonC+(tempEquivStrain-epsilon)*alpha)/
+     $        rateFactor
       else
-          tempEquivStrainC=epsilonC+ oldAlpha*(minEquivStrain-epsilon)/
-     $        tempRateFactor + alpha*(tempEquivStrain-minEquivStrain)/
-     $         tempRateFactor
+         tempEquivStrainC=(epsilonC+oldAlpha*(minEquivStrain-epsilon)+
+     $        alpha*(tempEquivStrain-minEquivStrain))/rateFactor
       end if
-   
-c     Note rate factor is calculated only once at the onset of damage
-      if ( ( tempEquivStrainT .gt. e0 .or. tempEquivStrainC .gt. e0
-     $     ) .and. ( ( omegaT .eq. 0. ) .and. (omegaC .eq. 0. ) ).and.
-     $     sratetype .gt. 0.0 .and. step1flag .ne. 1) then
-         tempEquivStrainT=epsilonT+(tempEquivStrain-epsilon)/rateFactor
-         if (unloadingFlag .eq. 0) then
-            tempEquivStrainC=epsilonC+(tempEquivStrain-epsilon)*alpha/
-     $           rateFactor
-         else
-            tempEquivStrainC=epsilonC+oldAlpha*(minEquivStrain-
-     $           epsilon)/rateFactor+(tempEquivStrain-minEquivStrain)*
-     $           alpha/rateFactor 
-         end if
-      else
-         rateFactor = tempRateFactor 
-      endif
       
       fsT = (tempEquivStrainT - kappaDT)/e0
       fsC = (tempEquivStrainC - kappaDC)/e0
 
       epsilon=tempEquivStrain
-      epsilonT=tempEquivStrainT
-      epsilonC=tempEquivStrainC
+      epsilonT=tempEquivStrainT*rateFactor
+      epsilonC=tempEquivStrainC*rateFactor
 c -------------------- Compute Ductility Measure Damage --------------------------------------------------
       call cdpm2u_computeTrialCoordinates(stress, sigElastic,
      $rhoElastic,thetaElastic)
@@ -2092,7 +2074,7 @@ c     only compressive damage surface active
          deltaPlasticStrainNormCNew =
      $        cdpm2u_computeDeltaPlasticStrainNormC(alpha, 
      $        tempEquivStrainC,
-     $        deltaPlasticStrainNormC, kappaDC,rhoElastic,
+     $        deltaPlasticStrainNormC, kappaDC,rhoElastic/rateFactor,
      $        tempKappaP,yieldTolDamage)
          kappaDC1 = kappaDC1 + 
      $        deltaPlasticStrainNormCNew /( ducMeas*rateFactor)
@@ -2124,7 +2106,7 @@ c     only compressive damage surface active
          deltaPlasticStrainNormCNew = 
      $        cdpm2u_computeDeltaPlasticStrainNormC(
      $        alpha,tempEquivStrainC,deltaPlasticStrainNormC, 
-     $        kappaDC,rhoElastic,tempKappaP,yieldTolDamage)
+     $        kappaDC,rhoElastic/rateFactor,tempKappaP,yieldTolDamage)
          kappaDC1 = kappaDC1 + 
      $        deltaPlasticStrainNormCNew /( ducMeas * rateFactor)
          kappaDC2 = kappaDC2 + ( tempEquivStrainC - kappaDC) / 
@@ -2285,13 +2267,11 @@ c     So that damage does not become negative for kappa slightly above e0
       wfMod = wf
       wf1Mod = wf1
       if (sratetype .gt. 0.) then
-         if (eratetype .eq. 1.) then
-            wfMod = wf/rateFactor
-            wf1Mod = wf1/rateFactor
-         else if (eratetype .eq. 2.) then
-            wfMod = wf/(rateFactor*rateFactor)
-            wf1Mod = wf1/(rateFactor*rateFactor)
-         end if
+c     Dividing the strains by the rate factor increases the fracture
+c     energy by rateFactor**2. wf is scaled so that it increases by
+c     rateFactor**n instead.
+         wfMod = wf*rateFactor**(eratetype-2.)
+         wf1Mod = wf1*rateFactor**(eratetype-2.)
       end if
 
       if ( kappa  .gt. e0*(1-yieldTolDamage) ) then
@@ -2400,11 +2380,8 @@ c     Only tensile damage is used for damage flag 3
 
       efcMod = efc
       if (sratetype .gt. 0.) then
-         if (eratetype .eq. 1.) then
-            efcMod = efc/rateFactor
-         else if (eratetype .eq. 2.) then
-            efcMod = efc/(rateFactor*rateFactor)
-         end if
+c     See cdpm2u_computeDamageT
+         efcMod = efc*rateFactor**(eratetype-2.)
       end if
 
       omega=1.
@@ -2467,7 +2444,9 @@ c     answer          -------------------    calculated norm
          answer = 0.
       else if ( tempKappaD .gt. e0 * ( 1. - yieldTolDamage ) .and.
      $        kappaD .lt. e0  * ( 1. - yieldTolDamage )) then
-         factor = ( 1. - ( e0 - kappaD ) / ( tempKappaD - kappaD ) )
+c     fraction of the increment beyond e0 (zero if e0 is not reached)
+         factor = max(0., 1. - ( e0 - kappaD ) /
+     $        ( tempKappaD - kappaD ))
          answer = plastStrNorm*factor
       else 
          answer=plastStrNorm 
@@ -2510,7 +2489,9 @@ c     answer          -------------------  calculated answer
          answer = 0.
       else if ( tempKappaD .gt. e0 * ( 1. - yieldTolDamage ) .and.
      $        kappaD .lt. e0 * ( 1. - yieldTolDamage ) ) then
-         factor = ( 1. - ( e0 - kappaD ) / ( tempKappaD - kappaD ) )
+c     fraction of the increment beyond e0 (zero if e0 is not reached)
+         factor = max(0., 1. - ( e0 - kappaD ) /
+     $        ( tempKappaD - kappaD ))
          answer=plastStrNorm*factor
       else 
          answer=plastStrNorm

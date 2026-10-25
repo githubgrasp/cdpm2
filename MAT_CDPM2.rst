@@ -35,7 +35,7 @@ Card 1   1    2    3  4   5   6      7     8
 ======== ==== ==== == === === ====== ===== ==
 Variable MID  RO   MT LMC NHV IORTHO IBULK IG
 Type     A8   F    F  F   F   F      F     F
-Input    none none 50 26  28  0      25    26
+Input    none none 50 26  31  0      25    26
 ======== ==== ==== == === === ====== ===== ==
 
 ======== ===== ===== ====== ====== ==== ==== = =
@@ -99,7 +99,7 @@ LMC
    Number of model input parameters. There are 26 including K and G.
 
 NHV
-   Number of history variables. The model has 28 history variables, which are
+   Number of history variables. The model has 31 history variables, which are
    listed below.
 
 IORTHO
@@ -164,12 +164,9 @@ FC
 
 HP
    Hardening parameter. Default is 0.0. HP must lie between 0 and 1-QH0.
-   Note the following:
-
-   1. For applications without strain rate effects (STRFLG = 0), HP = 0.01
-      is recommended.
-   2. For strain rate dependent material response (STRFLG > 0), HP = 0.5 is
-      recommended.
+   HP = 0.01 is recommended. Since the strength increase due to the strain
+   rate is obtained by the plasticity part (see STRFLG), this also applies to
+   strain rate dependent analyses.
 
 AH, BH, CH, DH
    Hardening ductility parameters 1 to 4. Defaults are 0.08, 0.003, 2 and
@@ -182,12 +179,13 @@ DF
    Flow rule parameter. Default is 0.85.
 
 ERT
-   Flag for the way the fracture energy is related to the dynamic increase
-   factor (DIF). Only used if STRFLG > 0.
+   Exponent n of the rate dependence of the fracture energy, which is
+   multiplied by DIF^n. Only used if STRFLG > 0. ERT must lie between 0 and 1.
 
-   - EQ.0.0: fracture energy is not increased.
+   - EQ.0.0: fracture energy is not increased (default).
    - EQ.1.0: fracture energy is increased by DIF.
-   - EQ.2.0: fracture energy is increased by the square of DIF.
+
+   Values in between, for instance 0.5, give a smaller increase than DIF.
 
 TYPE
    Flag for the tensile damage type.
@@ -231,6 +229,18 @@ STRFLG
    - EQ.1.0: strain rate dependence using the first branch of the MC2010 DIF.
    - EQ.2.0: strain rate dependence using the first and second branch of the
      MC2010 DIF.
+
+   The DIF is computed at the end of each step from the rates of the maximum
+   and minimum principal strains, using the MC2010 expressions for tension and
+   compression, which are combined with the compression factor alpha. It is
+   used in the next step. During unloading, the DIFs in tension and
+   compression are kept constant, and once damage has started, the DIF is no
+   longer changed. Both FT and FC are multiplied by the DIF, so that the yield
+   surface expands without changing its shape, and damage starts when the
+   effective stress reaches the expanded yield surface. The model is evaluated
+   for the strains divided by the DIF and the resulting stress is multiplied by
+   the DIF. Therefore, the strains at peak stress increase with the DIF as
+   well.
 
 FAILFLG
    Failure flag.
@@ -289,7 +299,7 @@ History variables
 14 kappa compression kdc2
 15 damage variable tension omegaT
 16 damage variable compression omegaC
-17 strain rate factor
+17 rate factor (DIF) for the next step
 18 compression factor alphac
 19 equivalent strain - tension
 20 equivalent strain - compression
@@ -300,7 +310,10 @@ History variables
 25 total strain yz
 26 total strain xz
 27 equivalent strain (without rate factor)
-28 principal strain used for the strain rate
+28 max principal strain used for the strain rate
+29 min principal strain used for the strain rate
+30 rate factor tension
+31 rate factor compression
 == =================================================
 
 References
